@@ -41,7 +41,9 @@ npx wrangler login
 npx wrangler d1 create switchyard
 ```
 
-Copy the `database_id` it prints into `wrangler.toml`, then create the table:
+Copy the `database_id` it prints into `wrangler.toml`. The deploy fails until this is a real ID.
+
+The storage API creates its table the first time it's used. If you'd rather create it up front:
 
 ```bash
 npm run db:migrate

@@ -6,10 +6,13 @@ pages_build_output_dir = "public"
 [[d1_databases]]
 binding = "DB"
 database_name = "switchyard"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "2d11f2c5-3470-474c-8c2c-c59ef5e75d0b"
 migrations_dir = "migrations"
 
 [vars]
-# Your Zero Trust team domain and the Access application's Audience (AUD) tag.
-ACCESS_TEAM_DOMAIN = "REPLACE_WITH_YOUR_TEAM.cloudflareaccess.com"
-ACCESS_AUD = "REPLACE_WITH_YOUR_ACCESS_AUD_TAG"
+# Fill these in to turn on sign-in and synced storage (README, step 3):
+# your Zero Trust team domain, e.g. "yourteam.cloudflareaccess.com",
+# and your Access application's Audience (AUD) tag.
+# While they are empty, the site works with storage in each visitor's browser.
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
