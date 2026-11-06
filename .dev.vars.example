@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local development with `npm run dev`.
+# Pretends you are signed in as this user so the storage API works without Cloudflare Access.
+# Never add DEV_USER to your production environment.
+DEV_USER=you@example.com

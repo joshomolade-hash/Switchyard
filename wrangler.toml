@@ -1,0 +1,15 @@
+# Cloudflare Pages project configuration. See README.md for the full setup.
+name = "switchyard"
+compatibility_date = "2024-11-01"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "switchyard"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+[vars]
+# Your Zero Trust team domain and the Access application's Audience (AUD) tag.
+ACCESS_TEAM_DOMAIN = "REPLACE_WITH_YOUR_TEAM.cloudflareaccess.com"
+ACCESS_AUD = "REPLACE_WITH_YOUR_ACCESS_AUD_TAG"

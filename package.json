@@ -1,0 +1,17 @@
+{
+  "name": "switchyard",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Switchyard diagram studio, self-hosted on Cloudflare Pages",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && wrangler pages dev",
+    "db:migrate:local": "wrangler d1 migrations apply switchyard --local",
+    "db:migrate": "wrangler d1 migrations apply switchyard --remote",
+    "deploy": "node scripts/build.mjs && wrangler pages deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}
