@@ -238,6 +238,24 @@ button{cursor:pointer}
 .err{color:var(--danger)!important}
 .keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 24px}
 .keys div{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line)}
+.demo-shield{position:fixed;inset:0;z-index:85;cursor:not-allowed}
+.demo-bar{position:fixed;z-index:95;left:50%;transform:translateX(-50%);bottom:calc(40px + env(safe-area-inset-bottom,0px));width:min(620px,calc(100% - 32px));box-sizing:border-box;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:12px 14px;display:grid;gap:8px}
+.db-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.db-top b{font:700 14px/1.25 var(--display)}
+.db-count{font:12px/1 var(--mono);color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+.db-say{margin:0;font-size:13.5px;line-height:1.5;min-height:3em;color:var(--ink)}
+.db-prog{height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+.db-prog i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.db-ctrl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.db-ctrl .spacer{flex:1}
+.db-ctrl .btn:disabled{opacity:.4;cursor:default}
+.demo-cursor{position:fixed;left:0;top:0;z-index:96;pointer-events:none;width:24px;height:24px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+.demo-ripple{position:fixed;z-index:96;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;border:2px solid var(--accent);pointer-events:none;animation:dr .55s ease-out forwards}
+@keyframes dr{from{transform:scale(.3);opacity:1}to{transform:scale(1.25);opacity:0}}
+.demo-key{position:fixed;z-index:96;pointer-events:none;font:600 14px/1 var(--mono);padding:6px 9px;border:1px solid var(--line-strong);border-bottom-width:3px;border-radius:6px;background:var(--panel);color:var(--ink);box-shadow:var(--shadow);animation:dk 1s ease forwards}
+@keyframes dk{0%{opacity:0;transform:translateY(4px)}15%{opacity:1;transform:none}80%{opacity:1}100%{opacity:0}}
+body.demo .hint{display:none}
+@media (prefers-reduced-motion: reduce){ .demo-ripple,.demo-key{animation:none;opacity:0} }
 .toast{position:fixed;left:50%;bottom:calc(48px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:70;background:var(--ink);color:var(--panel);padding:9px 14px;border-radius:9px;font-size:12.5px;box-shadow:var(--shadow);max-width:calc(100% - 32px)}
 
 @media (max-width: 900px){
@@ -293,6 +311,13 @@ button{cursor:pointer}
         <option value="phases">Phased process (nested)</option>
         <option value="schematic">Circuit schematic</option>
         <option value="chem">Chemical structures</option>
+        <optgroup label="Watch it built, step by step">
+          <option value="demo:refund">▶ Refund request flow</option>
+          <option value="demo:er">▶ Data model (ER)</option>
+          <option value="demo:phases">▶ Phased process</option>
+          <option value="demo:schematic">▶ Circuit schematic</option>
+          <option value="demo:chem">▶ Chemical structures</option>
+        </optgroup>
         <option value="blank">Blank canvas</option>
       </select>
       <button class="ib optional" id="bKeys" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"></button>
@@ -343,6 +368,9 @@ button{cursor:pointer}
 <div id="menu" class="menu" hidden role="menu"></div>
 <div id="modal" class="modal" hidden><div class="mbox" role="dialog" aria-modal="true"></div></div>
 <div id="toast" class="toast" hidden role="status"></div>
+<div id="demoShield" class="demo-shield" hidden></div>
+<div id="demoBar" class="demo-bar" hidden role="region" aria-label="Guided build" aria-live="polite"></div>
+<div id="demoCursor" class="demo-cursor" hidden aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M3 2l15 9.5-6.6 1.6L15 20l-3 1.4-3.4-6.9L3 19z" fill="#111827" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
 <input type="file" id="fileImg" accept="image/*" hidden>
 <input type="file" id="fileJson" accept=".json,application/json" hidden>
 
@@ -500,6 +528,7 @@ const TRIM={none:0,arrow:.72,triangle:1,open:0,diamond:1.8,odiamond:1.8,circle:.
 let doc, view={x:0,y:0,z:1}, sel=new Set(), tool='select', hoverId=null;
 let undoStack=[], redoStack=[], lastCk={key:null,t:0};
 let drag=null, editing=null, clipboard=null, clipText='', styleClip=null, guides=[], dropTarget=null, spaceDown=false;
+let demo=null, demoMode=false;
 let pasteN=0, pasteFlag=false, pendingImageRect=null, menuPt=null, exportState=null;
 const pointers=new Map();
 const stage=$('#stage'), nodesL=$('#nodesL'), edgesL=$('#edgesL'), ovL=$('#ovL'), dyn=$('#dyn'), world=$('#world');
@@ -518,7 +547,7 @@ function cleanSel(){ const ids=new Set([...doc.nodes.map(n=>n.id),...doc.edges.m
 function isDark(hex){ const h=(hex||'#fff').replace('#',''); if(h.length<6) return false; const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16); return (0.2126*r+0.7152*g+0.0722*b)<120; }
 
 /* ---------- history ---------- */
-function checkpoint(key){ const now=Date.now(); if(key&&key===lastCk.key&&now-lastCk.t<1200){ lastCk.t=now; return; } lastCk={key,t:now}; undoStack.push(JSON.stringify(doc)); if(undoStack.length>200) undoStack.shift(); redoStack=[]; updateUndoBtns(); }
+function checkpoint(key){ if(demoMode) return; const now=Date.now(); if(key&&key===lastCk.key&&now-lastCk.t<1200){ lastCk.t=now; return; } lastCk={key,t:now}; undoStack.push(JSON.stringify(doc)); if(undoStack.length>200) undoStack.shift(); redoStack=[]; updateUndoBtns(); }
 function undo(){ if(!undoStack.length) return; redoStack.push(JSON.stringify(doc)); doc=JSON.parse(undoStack.pop()); lastCk={}; cleanSel(); refresh(true); }
 function redo(){ if(!redoStack.length) return; undoStack.push(JSON.stringify(doc)); doc=JSON.parse(redoStack.pop()); lastCk={}; cleanSel(); refresh(true); }
 function updateUndoBtns(){ $('#bUndo').disabled=!undoStack.length; $('#bRedo').disabled=!redoStack.length; }
@@ -1418,6 +1447,7 @@ function edgePanel(es,mixed){
 function canvasPanel(){
   let h=`<div class="ph"><b>Canvas</b><span class="muted">Nothing selected</span></div>`;
   h+=`<section><div class="stat"><div><b>${doc.nodes.length}</b><span>shapes</span></div><div><b>${doc.edges.length}</b><span>connections</span></div></div></section>`;
+  h+=`<section><h3>Watch it built</h3><p class="pnote">See an example put together step by step, the way you would build it yourself.</p><div class="row">${[['refund','Refund flow'],['er','Data model'],['phases','Phases'],['schematic','Circuit'],['chem','Molecules']].map(([k,l])=>`<button class="btn small" data-act="demo" data-t="${k}">▶ ${l}</button>`).join('')}</div></section>`;
   h+=`<section><h3>Start from</h3><div class="row"><button class="btn small" data-act="tpl" data-t="refund">Refund flow</button><button class="btn small" data-act="tpl" data-t="er">Data model</button><button class="btn small" data-act="tpl" data-t="phases">Phases</button><button class="btn small" data-act="tpl" data-t="schematic">Circuit</button><button class="btn small" data-act="tpl" data-t="chem">Molecules</button><button class="btn small" data-act="tpl" data-t="blank">Blank</button></div></section>`;
   h+=`<section><h3>Background</h3><div class="bgs">${BG_PRESETS.map(([c,nm])=>`<button class="bgb${doc.bg===c?' on':''}" data-act="bg" data-c="${c}" style="background:${c}" title="${nm}" aria-label="${nm} background"></button>`).join('')}${colorB('d','bg',doc.bg,'Custom')}</div></section>`;
   h+=`<section><h3>Grid</h3>${segB('d','grid',[['dots','Dots'],['lines','Lines'],['none','None']],doc.grid,'full')}${segB('d','gridSize',[[10,'10'],[20,'20'],[40,'40']],doc.gridSize,'full')}<div class="row">${togB('d','snap',doc.snap,'Snap to grid')}${togB('d','guides',doc.guides,'Smart guides','Align to nearby shapes while moving')}${togB('d','pushOnExpand',doc.pushOnExpand!==false,'Make room on expand','Push nearby shapes aside when a phase opens')}${togB('d','autoBranch',doc.autoBranch!==false,'Auto Yes / No','Label the first two lines out of a decision Yes and No')}</div></section>`;
@@ -1503,6 +1533,7 @@ function act(name,btn){
       doc.nodes=doc.nodes.filter(n=>!ids.has(n.id)); doc.edges=doc.edges.filter(e=>!(e.from&&ids.has(e.from.node))&&!(e.to&&ids.has(e.to.node))); sel.clear(); toast('Phase removed. Its steps stay on the canvas.'); break; }
     case 'hidePanel': setSide('panel',false); return;
     case 'tpl': loadTemplate(btn.dataset.t); return;
+    case 'demo': startDemo(btn.dataset.t); return;
   }
   refresh(true);
 }
@@ -1803,19 +1834,21 @@ function autoEdgeStyle(e){
   if((a&&ELEC.has(a.shape))||(b&&ELEC.has(b.shape))) e.style={...e.style,...WIRE};
 }
 function chemBuild(kind,cx,cy,nodes,edges){
-  const L=44, A=[];
-  const add=(x,y,text='')=>{ const n={id:uid(),shape:'atom',x:f(x-14),y:f(y-14),w:28,h:28,rot:0,text,style:{...DEF_NODE,...SHAPE_STYLE.atom}}; n.style.color=elementColor(text); nodes.push(n); A.push(n); return n; };
-  const bond=(a,b,type='single',side=0)=>{ const e={id:uid(),from:{node:a.id,port:'auto'},to:{node:b.id,port:'auto'},p1:{x:0,y:0},p2:{x:0,y:0},label:'',labelPos:.5,style:{...DEF_EDGE,...BOND,bond:type}}; if(side) e.style.bondSide=side; edges.push(e); return e; };
+  const L=44, A=[]; let tagR=null;
+  const add=(x,y,text='')=>{ const n={id:uid(),shape:'atom',x:f(x-14),y:f(y-14),w:28,h:28,rot:0,text,style:{...DEF_NODE,...SHAPE_STYLE.atom}}; n.style.color=elementColor(text); if(tagR){ n.ring=tagR; n.ringKind=kind; } nodes.push(n); A.push(n); return n; };
+  const bond=(a,b,type='single',side=0)=>{ const e={id:uid(),from:{node:a.id,port:'auto'},to:{node:b.id,port:'auto'},p1:{x:0,y:0},p2:{x:0,y:0},label:'',labelPos:.5,style:{...DEF_EDGE,...BOND,bond:type}}; if(side) e.style.bondSide=side; if(tagR) e.ring=tagR; edges.push(e); return e; };
   const ring=(nv,doubles)=>{ const R=L/(2*Math.sin(Math.PI/nv)), pts=[];
     for(let i=0;i<nv;i++){ const ang=(-90+i*360/nv)*Math.PI/180; pts.push(add(cx+R*Math.cos(ang),cy+R*Math.sin(ang))); }
     for(let i=0;i<nv;i++){ const a=pts[i], b=pts[(i+1)%nv], dbl=doubles.includes(i); let side=0;
       if(dbl){ const tx=b.x-a.x, ty=b.y-a.y, mx=(a.x+b.x)/2+14, my=(a.y+b.y)/2+14; side=Math.sign(-ty*(cx-mx)+tx*(cy-my))||1; }
       bond(a,b,dbl?'double':'single',side); }
     return pts; };
+  if(INSERTS[kind]) tagR=uid();
   if(kind==='benzene') ring(6,[0,2,4]);
   else if(kind==='cyclohexane') ring(6,[]);
   else if(kind==='cyclopentane') ring(5,[]);
   else if(kind==='chain'){ const dx=L*Math.cos(Math.PI/6), dy=L*.5; let prev=null; for(let i=0;i<4;i++){ const a=add(cx+(i-1.5)*dx,cy+(i%2?dy/2:-dy/2)); if(prev) bond(prev,a); prev=a; } }
+  tagR=null;
   return {atoms:A.slice(),add,bond};
 }
 function insertChem(kind,at){
@@ -1891,7 +1924,7 @@ $('#zVal').onclick=()=>{ const r=stage.getBoundingClientRect(); zoomAt(r.width/2
 $('#docTitle').addEventListener('input',e=>{ checkpoint('title'); doc.title=e.target.value||'Untitled diagram'; saveSoon(); });
 $('#docTitle').addEventListener('keydown',e=>{ if(e.key==='Enter') e.target.blur(); });
 function loadTemplate(v){ checkpoint(); doc=v==='refund'?refundDoc():v==='er'?erDoc():v==='phases'?phasesDoc():v==='schematic'?schematicDoc():v==='chem'?chemDoc():newDoc(); sel.clear(); refresh(true); fit(); toast(v==='blank'?'Started a blank canvas. Ctrl+Z restores the previous one.':`Loaded “${doc.title}”. Ctrl+Z restores the previous canvas.`); closeSheets(); }
-$('#tplSel').addEventListener('change',e=>{ const v=e.target.value; e.target.value=''; if(v) loadTemplate(v); });
+$('#tplSel').addEventListener('change',e=>{ const v=e.target.value; e.target.value=''; if(!v) return; if(v.startsWith('demo:')) startDemo(v.slice(5)); else loadTemplate(v); });
 window.addEventListener('resize',()=>{ scheduleMini(); if(editing) layoutEditor(); });
 
 /* ---------- collapsible side panels ---------- */
@@ -1904,21 +1937,261 @@ $('#bLib').innerHTML=ic('sideL'); $('#bPanel').innerHTML=ic('sideR');
 $('#bLib').onclick=()=>setSide('lib',!sides.lib); $('#bLibX').innerHTML=ic('collapseR'); $('#bLibX').onclick=()=>setSide('lib',false); $('#bPanel').onclick=()=>setSide('panel',!sides.panel);
 applySides();
 
+/* ---------- guided builds ---------- */
+const DEMO_MAKERS={refund:()=>refundDoc(),er:()=>erDoc(),phases:()=>phasesDoc(),schematic:()=>schematicDoc(),chem:()=>chemDoc()};
+const SKEYS=['fillType','fill','fill2','pattern','texScale','angle','grain','stroke','strokeWidth','dash','radius','opacity','shadow','font','fontSize','color','bold','italic','underline','strike','align','valign','header','headerColor'];
+const shortT=t=>{ t=String(t||'').split('\n')[0]; return t.length>34?t.slice(0,32)+'…':t; };
+const joinList=a=>a.length<2?(a[0]||''):a.slice(0,-1).join(', ')+' and '+a[a.length-1];
+const article=w=>/^[aeiou]/i.test(w)?'an':'a';
+const libKey=n=>{ if(n.shape==='atom'){ const k='atom-'+n.text; return VARIANTS[k]?k:'atom'; } return n.shape; };
+const groupOf=k=>(LIB.find(([,items])=>items.some(([x])=>x===k))||['the library'])[0];
+const baseStyleFor=n=>({...nodeStyleFor(n.shape),...(n.shape==='atom'?{color:elementColor(n.text)}:{})});
+const styleDiff=n=>{ const b=baseStyleFor(n); return SKEYS.filter(k=>JSON.stringify(b[k])!==JSON.stringify(n.style[k])); };
+function nameOf(n){ if(!n) return 'an empty spot'; if(n.shape==='atom') return n.text?`the ${n.text}`:'the carbon'; const t=n.title||n.text; return t?`“${shortT(t)}”`:`the ${(SHAPE_NAME[n.shape]||n.shape).toLowerCase()}`; }
+function describeNodeStyle(n){
+  const s=n.style, keys=new Set(styleDiff(n)), out=[]; let target='';
+  const pi=PRESETS.findIndex(q=>q.fill===s.fill&&q.stroke===s.stroke&&q.color===s.color);
+  if(pi>=0&&(keys.has('fill')||keys.has('stroke')||keys.has('color'))){ out.push(`pick the ${PRESETS[pi].name} quick style`); target=`[data-act="preset"][data-i="${pi}"]`; ['fill','stroke','color'].forEach(k=>keys.delete(k)); }
+  if(keys.has('fillType')){ const pat=(PATTERNS.find(q=>q[0]===s.pattern)||[0,'pattern'])[1].toLowerCase(); out.push(`set the fill to ${({none:'none',solid:'solid',linear:'a linear gradient',radial:'a radial gradient',pattern:`the ${pat} texture`,grain:'paper grain'})[s.fillType]}`); target=target||`[data-k="style.fillType"][data-v="${s.fillType}"]`; ['fillType','fill2','pattern','texScale','angle','grain'].forEach(k=>keys.delete(k)); }
+  if(keys.has('fill')||keys.has('stroke')||keys.has('color')){ out.push('set its colours'); target=target||'[data-k="style.fill"],[data-k="style.color"]'; }
+  if(keys.has('header')||keys.has('headerColor')){ out.push('change the header colour'); target=target||'[data-k="style.header"]'; }
+  if(keys.has('font')||keys.has('fontSize')){ out.push(`set the font to ${s.font} ${s.fontSize}`); target=target||'[data-k="style.font"]'; }
+  if(keys.has('bold')&&s.bold) out.push('make the text bold');
+  if(keys.has('shadow')&&s.shadow) out.push('turn on the drop shadow');
+  if(keys.has('radius')) out.push('round the corners');
+  if(keys.has('dash')) out.push(`make the border ${s.dash}`);
+  if(keys.has('align')||keys.has('valign')) out.push('align the text');
+  if(!out.length) out.push('fine-tune it');
+  return {text:'In the inspector, '+joinList(out)+'.',target};
+}
+function planDemo(final){
+  const nodes=final.nodes, edges=final.edges, byId=new Map(nodes.map(n=>[n.id,n])), isPh=n=>n.shape==='phase';
+  const pos=(a,b)=>(a.y-b.y)||(a.x-b.x), incoming=new Set(), out=new Map(), und=new Map();
+  const push=(m,k,v)=>{ if(!m.has(k)) m.set(k,[]); m.get(k).push(v); };
+  edges.forEach(e=>{ if(e.from&&e.to){ incoming.add(e.to.node); push(out,e.from.node,e.to.node); push(und,e.from.node,e.to.node); push(und,e.to.node,e.from.node); } });
+  const body=nodes.filter(n=>!isPh(n)&&n.shape!=='frame'), order=[], seen=new Set();
+  const bfs=(seed,map)=>{ const q=[seed]; while(q.length){ const n=q.shift(); if(!n||seen.has(n.id)||isPh(n)||n.shape==='frame') continue; seen.add(n.id); order.push(n); (map.get(n.id)||[]).map(id=>byId.get(id)).filter(Boolean).sort(pos).forEach(m=>q.push(m)); } };
+  body.filter(n=>!incoming.has(n.id)&&out.has(n.id)).sort(pos).forEach(n=>bfs(n,out));
+  body.filter(n=>!seen.has(n.id)).sort((a,b)=>(!!b.ring-!!a.ring)||pos(a,b)).forEach(n=>bfs(n,und));
+  nodes.filter(n=>n.shape==='frame').sort(pos).forEach(n=>order.push(n));
+  const steps=[{kind:'canvas'}], placed=new Set(), doneE=new Set(), donePh=new Set(), rings=new Set();
+  const flush=()=>{
+    for(const e of edges){ if(doneE.has(e.id)) continue; const a=e.from&&e.from.node, b=e.to&&e.to.node; if((a&&!placed.has(a))||(b&&!placed.has(b))) continue; doneE.add(e.id); steps.push({kind:'edge',e}); }
+    let again=true; while(again){ again=false; for(const ph of nodes.filter(isPh)){ if(donePh.has(ph.id)) continue; const k=nodes.filter(m=>m.parentId===ph.id); if(k.length&&k.every(c=>placed.has(c.id))){ donePh.add(ph.id); placed.add(ph.id); steps.push({kind:'phase',n:ph}); again=true; } } }
+  };
+  for(const n of order){
+    if(placed.has(n.id)) continue;
+    if(n.ring){ if(rings.has(n.ring)) continue; rings.add(n.ring); const atoms=nodes.filter(m=>m.ring===n.ring), bonds=edges.filter(e=>e.ring===n.ring); atoms.forEach(a=>placed.add(a.id)); bonds.forEach(e=>doneE.add(e.id)); steps.push({kind:'ring',atoms,bonds,ringKind:n.ringKind}); }
+    else { placed.add(n.id); steps.push({kind:'node',n}); if(styleDiff(n).length) steps.push({kind:'nstyle',n}); }
+    flush();
+  }
+  nodes.filter(isPh).forEach(ph=>{ if(!placed.has(ph.id)){ placed.add(ph.id); } });
+  flush();
+  nodes.filter(n=>isPh(n)&&n.collapsed).forEach(n=>steps.push({kind:'collapse',n}));
+  steps.push({kind:'done'});
+  return steps;
+}
+let curPos={x:0,y:0};
+const raf=()=>new Promise(r=>requestAnimationFrame(r));
+async function dwait(ms){ const end=performance.now()+ms/(demo?demo.speed:1); while(performance.now()<end){ if(!demo||demo.fast) return; await raf(); } }
+function placeCursor(){ $('#demoCursor').style.transform=`translate(${f(curPos.x)}px,${f(curPos.y)}px)`; }
+async function cmove(x,y,ms=650,onStep){ const s0={...curPos}, dur=ms/demo.speed, t0=performance.now();
+  for(;;){ const k=(!demo||demo.fast)?1:Math.min(1,(performance.now()-t0)/dur), e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2; curPos={x:s0.x+(x-s0.x)*e,y:s0.y+(y-s0.y)*e}; placeCursor(); if(onStep) onStep(e,curPos); if(k>=1) break; await raf(); } }
+function ripple(){ if(!demo||demo.fast||reduceMotion) return; const r=document.createElement('div'); r.className='demo-ripple'; r.style.left=curPos.x+'px'; r.style.top=curPos.y+'px'; document.body.appendChild(r); setTimeout(()=>r.remove(),600); }
+async function dclick(ms=200){ ripple(); await dwait(ms); }
+function keycap(t){ if(!demo||demo.fast) return; const k=document.createElement('div'); k.className='demo-key'; k.textContent=t; k.style.left=(curPos.x+20)+'px'; k.style.top=(curPos.y+18)+'px'; document.body.appendChild(k); setTimeout(()=>k.remove(),1000); }
+function scr(wx,wy){ const r=stage.getBoundingClientRect(); return {x:r.left+view.x+wx*view.z,y:r.top+view.y+wy*view.z}; }
+async function toEl(q){ let el=null; try{ el=document.querySelector(q); }catch(_){} if(!el) return false; tourPrep(el); if(el.closest('#panel')){ try{ el.scrollIntoView({block:'nearest'}); }catch(_){} } if(!tourVisible(el)) return false; const r=el.getBoundingClientRect(); await cmove(r.left+Math.min(r.width/2,36),r.top+r.height/2); return true; }
+async function typeInto(kind,id,field,text){
+  startEdit(kind,id,field); if(!editing) return; const full=String(text||''), per=Math.max(10,Math.min(55,1300/Math.max(1,full.length)));
+  for(let i=1;i<=full.length;i++){ if(!editing||!demo||demo.fast) break; ta.value=full.slice(0,i); layoutEditor(); await dwait(per); }
+  if(editing){ ta.value=full; commitEdit(); }
+}
+function say(t){ if(demo){ demo.say=t; renderBar(); } }
+const EDESC={route:v=>`the route to ${({straight:'straight',orthogonal:'elbow',curved:'curved'})[v]}`,dash:v=>`a ${v} line`,start:v=>v==='none'?'no start marker':`a ${(HEADS.find(h=>h[0]===v)||[0,v])[1].toLowerCase()} at the start`,end:v=>v==='none'?'no arrowhead':`a ${(HEADS.find(h=>h[0]===v)||[0,v])[1].toLowerCase()} at the end`,flow:v=>v?'animated flow':'no animation',stroke:()=>'its colour',width:()=>'its width'};
+const ETARGET={route:v=>`[data-k="style.route"][data-v="${v}"]`,dash:v=>`[data-k="style.dash"][data-v="${v}"]`,flow:()=>'[data-k="style.flow"]',start:()=>'[data-k="style.start"]',end:()=>'[data-k="style.end"]',stroke:()=>'[data-k="style.stroke"]',width:()=>'[data-k="style.width"]'};
+async function execStep(st){
+  const F=demo.final;
+  switch(st.kind){
+    case 'canvas': {
+      const parts=[], D=newDoc();
+      if(F.bg!==D.bg){ const b=BG_PRESETS.find(x=>x[0]===F.bg); parts.push(`choose the ${b?b[1]:'custom'} background`); }
+      if(F.grid!==D.grid) parts.push(F.grid==='none'?'turn the grid off':`switch the grid to ${F.grid}`);
+      if(F.snap) parts.push('turn on Snap to grid');
+      say(`Start from a blank canvas${parts.length?', then '+joinList(parts)+' in the canvas settings':''}. Each step shows what to click.`);
+      sel.clear(); refresh(true);
+      const r=stage.getBoundingClientRect(); await cmove(r.left+r.width/2,r.top+r.height/2,500);
+      if(F.bg!==doc.bg&&await toEl(`#panel [data-act="bg"][data-c="${F.bg}"]`)) await dclick();
+      doc.bg=F.bg; refresh(true);
+      if(F.grid!==doc.grid&&await toEl(`#panel [data-k="grid"][data-v="${F.grid}"]`)) await dclick();
+      doc.grid=F.grid; doc.gridSize=F.gridSize; refresh(true); applyView();
+      if(F.snap&&await toEl('#panel [data-k="snap"]')) await dclick();
+      doc.snap=F.snap; doc.guides=F.guides; refresh(true); await dwait(300); break; }
+    case 'node': {
+      const n=st.n, key=libKey(n), nm=SHAPE_NAME[key]||n.shape, [dw,dh]=SIZES[key]||[160,72];
+      const custom=Math.abs(n.w-dw)>2||Math.abs(n.h-dh)>2;
+      const desig=ELEC.has(n.shape)?nextDesig(n.shape):'';
+      const typeText=n.shape!=='card'&&n.text&&!(n.shape==='atom'&&key!=='atom')&&n.text!==desig;
+      const tail=n.shape==='card'?' and fill in its title and text':typeText?(n.shape==='text'?` and type “${shortT(n.text)}”`:`, then type “${shortT(n.text)}”`):'';
+      say(`${custom?'Drag on the canvas to draw':'Click to place'} ${article(nm)} ${nm} from ${groupOf(key)}${tail}.`);
+      sel.clear(); hoverId=null; refresh(true);
+      if(await toEl(`.lib-item[data-shape="${key}"]`)){ await dclick(); setTool(key); }
+      const tl=scr(n.x,n.y), br=scr(n.x+n.w,n.y+n.h), c=scr(n.x+n.w/2,n.y+n.h/2);
+      if(custom){ await cmove(tl.x,tl.y); drag={mode:'draw',shape:key,start:{x:n.x,y:n.y},cur:{x:n.x,y:n.y}}; await cmove(br.x,br.y,750,(e,q)=>{ if(drag){ drag.cur=toWorld(q.x,q.y); renderOverlay(); } }); drag=null; }
+      else { await cmove(c.x,c.y); await dclick(120); }
+      setTool('select');
+      const m=clone(n); m.style=baseStyleFor(n); m.text=(n.shape==='atom'&&key!=='atom')?n.text:desig; if(n.shape==='card') m.title='Card title';
+      ['parentId','collapsed','pushed','ew','eh','ring','ringKind'].forEach(k=>delete m[k]);
+      if(n.shape==='frame') doc.nodes.unshift(m); else doc.nodes.push(m);
+      selectOnly(m.id); refresh(true); await dwait(250);
+      if(n.shape==='card'){ await typeInto('node',m.id,'title',n.title); await typeInto('node',m.id,'text',n.text); }
+      else if(typeText) await typeInto('node',m.id,'text',n.text);
+      const live=getNode(m.id); if(live){ live.text=n.text; if(n.title!=null) live.title=n.title; live.w=n.w; live.h=n.h; if(n.parentId&&getNode(n.parentId)) live.parentId=n.parentId; if(n.ring){ live.ring=n.ring; live.ringKind=n.ringKind; } }
+      refresh(true); break; }
+    case 'nstyle': {
+      const n=st.n, d=describeNodeStyle(n); say(d.text);
+      const m=getNode(n.id); if(!m) break; selectOnly(m.id); refresh(true);
+      if(d.target?await toEl(`#panel ${d.target.split(',')[0]}`):await toEl('#panel .ph')) await dclick();
+      m.style=clone(n.style); refresh(true); await dwait(300); break; }
+    case 'ring': {
+      const nm=SHAPE_NAME[st.ringKind]||'ring';
+      say(`Click ${nm} in Chemistry, then click the canvas. Its atoms and bonds arrive already joined.`);
+      sel.clear(); refresh(true);
+      if(await toEl(`.lib-item[data-shape="${st.ringKind}"]`)) await dclick();
+      const cx=st.atoms.reduce((a,b)=>a+b.x+14,0)/st.atoms.length, cy=st.atoms.reduce((a,b)=>a+b.y+14,0)/st.atoms.length, c=scr(cx,cy);
+      await cmove(c.x,c.y); await dclick(120);
+      st.atoms.forEach(a=>doc.nodes.push(clone(a))); st.bonds.forEach(b=>doc.edges.push(clone(b)));
+      sel=new Set(st.atoms.map(a=>a.id)); refresh(true); await dwait(350); break; }
+    case 'edge': {
+      const e=st.e, A=e.from&&getNode(e.from.node), B=e.to&&getNode(e.to.node);
+      const tmp=clone(e); tmp.label=''; tmp.style=edgeDefaults(); autoEdgeStyle(tmp); autoBranch(tmp);
+      const isBond=!!tmp.style.bond, isWire=!isBond&&tmp.style.end==='none'&&tmp.style.route==='orthogonal';
+      const follow=[]; let target='';
+      if(e.style.bond&&e.style.bond!==tmp.style.bond){ const bn={single:'Single',double:'Double',triple:'Triple',wedge:'Wedge',hash:'Hashed',aromatic:'Aromatic'}[e.style.bond]; follow.push(`choose ${bn} under Wire & bond`); target=`[data-act="bond"][data-b="${e.style.bond}"]`; }
+      const same=k=>JSON.stringify(tmp.style[k]??DEF_EDGE[k])===JSON.stringify(e.style[k]??DEF_EDGE[k]);
+      const P=EDGE_PRESETS.find(q=>Object.keys(q.style).every(k=>JSON.stringify(q.style[k])===JSON.stringify(e.style[k]??DEF_EDGE[k]))&&(!q.label||q.label===e.label));
+      const autoDone=P&&tmp.label===e.label&&Object.keys(P.style).every(same);
+      if(P&&!autoDone){ follow.push(`click the ${P.name} preset`); target=target||`[data-act="epreset"][data-p="${P.id}"]`; }
+      else if(!P&&!e.style.bond){ const ks=Object.keys(EDESC).filter(k=>!same(k)); if(ks.length){ follow.push('set '+joinList(ks.map(k=>EDESC[k](e.style[k])))); target=target||ETARGET[ks[0]](e.style[ks[0]]); } }
+      const needLabel=!!e.label&&e.label!==tmp.label&&!(P&&P.label===e.label);
+      let line=isBond?`Drag from a blue dot on ${nameOf(A)} to ${nameOf(B)} to bond them`:isWire?`Drag a wire from ${nameOf(A)} to ${nameOf(B)}; lines between circuit parts become wires`:`Drag from a blue dot on ${nameOf(A)} to ${nameOf(B)}`;
+      if(tmp.label&&tmp.label===e.label) line+=`. Because it leaves a decision, it's labelled ${tmp.label} automatically`;
+      if(follow.length) line+=`, then ${joinList(follow)}`;
+      if(needLabel) line+=`${follow.length?', and':', then'} double-click the line and type “${shortT(e.label)}”`;
+      say(line+'.');
+      sel.clear(); hoverId=A?A.id:null; refresh(true);
+      const g=edgeGeom(e,nodeMap()), sp=scr(g.a.x,g.a.y), ep=scr(g.b.x,g.b.y), off=(A&&A.shape==='atom')?0:16*view.z;
+      await cmove(sp.x+g.a.dx*off,sp.y+g.a.dy*off); ripple();
+      const ed=clone(tmp); ed.to=null; ed.p2={x:g.a.x,y:g.a.y}; hoverId=null; drag={mode:'newEdge',edge:ed,moved:true};
+      await cmove(ep.x,ep.y,800,(k,q)=>{ if(!drag) return; ed.p2=toWorld(q.x,q.y); dropTarget=(k>.8&&B)?{node:B.id,port:e.to.port}:null; renderOverlay(); });
+      drag=null; dropTarget=null;
+      const real=clone(tmp); doc.edges.push(real); selectOnly(real.id); refresh(true); await dwait(300);
+      if(follow.length&&target&&await toEl(`#panel ${target}`)) await dclick();
+      real.style=clone(e.style); if(P&&P.label===e.label) real.label=e.label; refresh(true);
+      if(needLabel){ const lp=pointAt(edgeGeom(real,nodeMap()).pts,e.labelPos??.5), q=scr(lp.x,lp.y); real.labelPos=e.labelPos??.5; await cmove(q.x,q.y,500); await dclick(100); ripple(); await typeInto('edge',real.id,'label',e.label); }
+      const live=getEdge(real.id); if(live) Object.assign(live,clone(e)); refresh(true); break; }
+    case 'phase': {
+      const p=st.n, kids=F.nodes.filter(m=>m.parentId===p.id), base=nodeStyleFor('phase'), hdr=JSON.stringify(base.header)!==JSON.stringify(p.style.header);
+      say(`Shift-click the ${kids.length} shapes that belong together, press P to nest them in a phase, and name it “${shortT(p.title)}”${hdr?'. Then pick a header colour in the inspector':''}.`);
+      sel.clear(); refresh(true);
+      for(const k of kids){ const m=getNode(k.id); if(!m) continue; const c=scr(m.x+m.w/2,m.y+(m.shape==='phase'?14:m.h/2)); await cmove(c.x,c.y,450); await dclick(120); sel.add(m.id); renderOverlay(); }
+      keycap('P'); await dwait(400);
+      const g=clone(p); g.collapsed=false; ['pushed','ew','eh'].forEach(k=>delete g[k]); if(p.ew){ g.w=p.ew; g.h=p.eh; } g.title='New phase'; g.style=clone(base);
+      if(!(p.parentId&&getNode(p.parentId))) delete g.parentId;
+      const idxs=kids.map(k=>doc.nodes.findIndex(x=>x.id===k.id)).filter(i=>i>=0); doc.nodes.splice(idxs.length?Math.min(...idxs):0,0,g);
+      kids.forEach(k=>{ const m=getNode(k.id); if(m) m.parentId=p.id; });
+      selectOnly(g.id); refresh(true); await dwait(200);
+      await typeInto('node',g.id,'title',p.title||'Phase');
+      const live=getNode(g.id); if(!live) break;
+      if(hdr){ selectOnly(live.id); refresh(true); if(await toEl('#panel [data-k="style.header"]')) await dclick(); }
+      live.style=clone(p.style); live.title=p.title; refresh(true); break; }
+    case 'collapse': {
+      const ph=getNode(st.n.id); if(!ph) break;
+      say(`Click the arrow on “${shortT(ph.title)}” to collapse it into a summary card. Lines into its steps now attach to the card.`);
+      sel.clear(); refresh(true); const c=scr(ph.x+ph.w-22,ph.y+phaseHead(ph)/2); await cmove(c.x,c.y,700); await dclick();
+      if(!ph.collapsed) toggleCollapse(ph.id); await dwait(300); break; }
+    case 'done': {
+      say('That is the whole diagram, built the same way you would. Choose Finish to keep editing it. After that, Ctrl+Z brings back the canvas you had before.');
+      doc=clone(F); sel.clear(); refresh(true); await dwait(200); break; }
+  }
+}
+function renderBar(){
+  const b=$('#demoBar'); if(!demo){ b.hidden=true; return; }
+  const n=demo.steps.length, i=demo.i, last=i>=n-1;
+  b.hidden=false;
+  b.innerHTML=`<div class="db-top"><b>Building “${esc(String(demo.final.title).replace(/ \(example\)$/,''))}”</b><span class="db-count">Step ${i+1} of ${n}</span></div><p class="db-say">${esc(demo.say||'')}</p><div class="db-prog"><i style="width:${((i+1)/n*100).toFixed(1)}%"></i></div><div class="db-ctrl"><button class="btn small" data-d="back"${i===0?' disabled':''}>Back</button>${last?'':`<button class="btn small" data-d="play">${demo.playing?'Pause':'Play'}</button>`}<button class="btn small primary" data-d="next">${last?'Finish':'Next'}</button><span class="seg" role="group" aria-label="Speed">${[1,2,4].map(v=>`<button data-d="speed" data-v="${v}" class="${demo.speed===v?'on':''}">${v}×</button>`).join('')}</span><span class="spacer"></span>${last?'':'<button class="btn small" data-d="skip">Skip to end</button>'}<button class="btn small" data-d="exit">Exit</button></div>`;
+}
+function demoAct(a,v){
+  if(!demo) return;
+  if(a==='speed'){ demo.speed=+v; renderBar(); return; }
+  if(a==='play'){ demo.playing=!demo.playing; renderBar(); if(demo.playing&&demo.gateResolve) demo.gateResolve('next'); return; }
+  const act=(a==='next'&&demo.i>=demo.steps.length-1)?'exit':a;
+  if(demo.busy){ demo.fast=true; if(act==='exit') demo.exitReq=true; else demo.pending=act; }
+  else if(demo.gateResolve) demo.gateResolve(act);
+}
+function demoGate(ms){ return new Promise(res=>{ demo.gateResolve=x=>{ if(demo) demo.gateResolve=null; res(x); };
+  if(ms!=null){ const t0=performance.now(); const tick=()=>{ if(!demo||!demo.gateResolve||!demo.playing) return; if(performance.now()-t0>=ms/demo.speed){ demo.gateResolve('next'); return; } requestAnimationFrame(tick); }; requestAnimationFrame(tick); } }); }
+function demoKeys(e){ if(!demo) return; e.stopPropagation(); const k=e.key; if(k==='Escape'){ e.preventDefault(); demoAct('exit'); } else if(k==='ArrowRight'||k==='Enter'){ e.preventDefault(); demoAct('next'); } else if(k==='ArrowLeft'){ e.preventDefault(); demoAct('back'); } else if(k===' '){ e.preventDefault(); demoAct('play'); } else if(!e.target.closest||!e.target.closest('#demoBar')) e.preventDefault(); }
+$('#demoBar').addEventListener('click',e=>{ const b=e.target.closest('button[data-d]'); if(b&&!b.disabled) demoAct(b.dataset.d,b.dataset.v); });
+$('#demoBar').addEventListener('pointerdown',e=>{ if(e.target.closest('button')) e.preventDefault(); });
+$('#demoShield').addEventListener('pointerdown',e=>e.preventDefault());
+$('#demoShield').addEventListener('wheel',e=>e.preventDefault(),{passive:false});
+function startDemo(key){
+  const make=DEMO_MAKERS[key]; if(!make||demo) return;
+  endTour(); if(editing) commitEdit(); closeSheets(); hideMenu(); setTool('select');
+  checkpoint(); const final=make(); const start=newDoc(); start.title=final.title;
+  doc=clone(final); { const b=contentBounds(), r=stage.getBoundingClientRect(), top=64, bot=Math.min(210,r.height*.4); const z=clamp(Math.min((r.width-80)/b.w,(r.height-top-bot)/b.h),.15,1.2); view.z=z; view.x=r.width/2-(b.x+b.w/2)*z; view.y=top+(r.height-top-bot)/2-(b.y+b.h/2)*z; applyView(); } doc=start; sel.clear(); refresh(true);
+  demoMode=true; demo={key,final,steps:planDemo(final),i:0,snaps:[],playing:true,speed:1,fast:false,pending:null,gateResolve:null,exitReq:false,busy:false,say:''};
+  document.body.classList.add('demo'); $('#demoShield').hidden=false; $('#demoCursor').hidden=false;
+  const r=stage.getBoundingClientRect(); curPos={x:r.left+r.width/2,y:r.top+r.height/2}; placeCursor();
+  window.addEventListener('keydown',demoKeys,true);
+  runDemo();
+}
+async function runDemo(){
+  while(demo&&!demo.exitReq){
+    const i=demo.i, steps=demo.steps; demo.snaps[i]=JSON.stringify(doc);
+    demo.busy=true; demo.fast=false; renderBar();
+    try{ await execStep(steps[i]); }catch(err){ console.error(err); }
+    if(!demo) return;
+    if(editing) commitEdit(); drag=null; dropTarget=null; demo.busy=false; demo.fast=false; renderBar();
+    if(demo.exitReq) break;
+    let a=demo.pending; demo.pending=null;
+    if(!a) a=await demoGate(demo.playing&&i<steps.length-1?1100:null);
+    if(!demo||a==='exit') break;
+    if(a==='back'){ const j=Math.max(0,i-1); doc=JSON.parse(demo.snaps[j]); demo.i=j; sel.clear(); refresh(true); continue; }
+    if(a==='skip'){ demo.i=steps.length-1; continue; }
+    if(i>=steps.length-1) break;
+    demo.i=i+1;
+  }
+  endDemo();
+}
+function endDemo(){
+  if(!demo) return; const finished=demo.i>=demo.steps.length-1;
+  demo=null; demoMode=false; drag=null; dropTarget=null; hoverId=null; if(editing) commitEdit();
+  document.body.classList.remove('demo'); $('#demoBar').hidden=true; $('#demoShield').hidden=true; $('#demoCursor').hidden=true;
+  window.removeEventListener('keydown',demoKeys,true); setTool('select'); sel.clear(); refresh(true);
+  toast(finished?'Example built. It’s yours to edit now. Ctrl+Z brings back your previous canvas.':'Build stopped. Ctrl+Z brings back your previous canvas.');
+}
+
 /* ---------- guided tour ---------- */
 const TOUR=[
   ['.dock','Tools','Switch between select, pan, connector, free arrow and text, or pick a common shape. The small letter on each button is its keyboard shortcut.'],
-  ['#lib','Shape library','24 shapes in three groups. Click one, then click or drag on the canvas to place it. You can also drag a shape straight onto the canvas.'],
-  ['#nodesL [data-kind="node"]:not([data-id="fr"])','Shapes and connections','Hover any shape and drag one of its blue dots onto another shape to connect them. Click a dot to add a linked shape. Double-click a shape to type in it.'],
-  ['#edgesL [data-part="label"]','Labels on lines','Double-click a line to label it, then drag the label to slide it along. Select a line to change its route, dashes and arrowheads.'],
-  ['#panel','Inspector','Styles whatever you select: fills, gradients, textures, fonts, borders, shadows, arrowheads and alignment. With nothing selected it shows canvas settings and templates. Collapse it, or the shape library, from the buttons in the header.'],
+  ['#lib','Shape library','Flowchart shapes, basic shapes, cards and notes, plus Electronics for circuit schematics and Chemistry for structural formulas. Click a part to place it, or drag it onto the canvas. Click a group heading to fold it away.'],
+  ['#nodesL [data-kind="node"]:not([data-id="fr"])','Shapes and connections','Hover a shape and drag one of its blue dots onto another shape to connect them. Click a dot to add a linked shape. Double-click a shape to type in it.'],
+  ['#edgesL [data-part="label"]','Labels on lines','Double-click a line to label it, then drag the label along it. Lines out of a decision are labelled Yes, then No, automatically.'],
+  ['#panel','Inspector','Styles whatever you select. A decision gets one-click Yes and No branches; a line gets presets plus wire and chemical bond styles. With nothing selected it shows canvas settings and examples.'],
+  ['.lib-item[data-shape="phase"]','Phases','Select some steps and press P to nest them in a phase. The arrow in its header collapses the phase into a summary card, and expanding it pushes nearby shapes aside.'],
+  ['#bLib','More room','Hide or show the shape library and the inspector to give the canvas more space.'],
+  ['#tplSel','Examples and guided builds','Load a finished example, or pick one under "Watch it built" to see it put together step by step with a moving cursor and captions. The same buttons are in the inspector when nothing is selected.'],
   ['.zoombar','Getting around','Zoom in and out, reset to 100% or fit the whole diagram. Scroll or hold Space and drag to pan.'],
   ['#bExport','Save and share','Your work saves in this browser automatically. Export a PNG, an SVG or a JSON copy you can import later. Press ? any time for shortcuts.'],
 ];
 let tour=null;
+function tourPrep(el){ if(!el) return; if(el.closest('#lib')){ const d=el.closest('details'); if(d&&!d.open) d.open=true; try{ el.scrollIntoView({block:'nearest'}); }catch(_){} } }
 function tourVisible(el){ if(!el) return false; const r=el.getBoundingClientRect(); return r.width>4&&r.height>4&&r.bottom>0&&r.top<innerHeight-8&&r.right>0&&r.left<innerWidth; }
 function startTour(){
   endTour(); closeSheets(); hideMenu(); sel.clear(); setTool('select'); afterSel();
-  const steps=TOUR.filter(s=>tourVisible(document.querySelector(s[0])));
+  const steps=TOUR.filter(s=>{ const el=document.querySelector(s[0]); tourPrep(el); return tourVisible(el); });
   if(!steps.length) return;
   const block=document.createElement('div'); block.className='tour-block';
   const spot=document.createElement('div'); spot.className='tour-spot';
@@ -1935,7 +2208,7 @@ function tourGo(d){ if(!tour) return; const n=tour.i+d; if(n>=tour.steps.length)
 function endTour(){ if(!tour) return; tour.block.remove(); tour.spot.remove(); tour.pop.remove(); window.removeEventListener('keydown',tourKeys,true); window.removeEventListener('resize',drawTour); tour=null; }
 function drawTour(){
   if(!tour) return; const {steps,i,spot,pop}=tour; const [selq,title,body]=steps[i];
-  const el=document.querySelector(selq); if(!tourVisible(el)){ if(i<steps.length-1){ tour.i++; drawTour(); } else endTour(); return; }
+  const el=document.querySelector(selq); tourPrep(el); if(!tourVisible(el)){ if(i<steps.length-1){ tour.i++; drawTour(); } else endTour(); return; }
   const last=i===steps.length-1;
   pop.innerHTML=`<h3>${esc(title)}</h3><p>${esc(body)}</p><div class="tour-foot"><span class="cnt">${i+1} / ${steps.length}</span><button class="btn small" data-t="end">Skip</button>${i?'<button class="btn small" data-t="prev">Back</button>':''}<button class="btn small primary" data-t="next">${last?'Done':'Next'}</button></div>`;
   const r=el.getBoundingClientRect(), pad=6;
